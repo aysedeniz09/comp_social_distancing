@@ -1,0 +1,1491 @@
+---
+title: "Media Source: Russia Analysis"
+author: "Ayse D Lokmanoglu"
+date: "`r Sys.Date()`"
+output: github_document
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE)
+knitr::opts_chunk$set(include = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(dev = "jpeg",
+                      dpi = 500,
+                      echo = TRUE,
+                      cache = TRUE)
+knitr::opts_chunk$set(fig.width=12, fig.height=8)
+```
+
+```{r, include=FALSE}
+getwd()
+```
+
+```{r, install-packages, message = FALSE, include = TRUE}
+# List of packages to install
+packages <- c(
+  "quanteda"          = "Text analysis package",
+  "seededlda"         = "Latent Dirichlet Allocation (LDA) modeling package",
+  "lubridate"         = "Date and time manipulation package",
+  "readr"             = "Data import package",
+  "dplyr"             = "Data manipulation package",
+  "tidyr"             = "Data tidying package",
+  "tidyverse"         = "Data science ecosystem package",
+  "scales"            = "Graphical scales package",
+  "ggplot2"           = "Data visualization package",
+  "wesanderson"       = "Color palettes package",
+  "ggthemes"          = "Additional themes for ggplot2",
+  "tidyquant"         = "Financial analysis package",
+  "quanteda.textplots"= "Text visualization package",
+  "quanteda.textstats"= "Text statistics package",
+  "rgexf"             = "GEXF graph file format package",
+  "openxlsx"          = "Excel file manipulation package",
+  "tidytext"          = "Text mining package",
+  "readxl"            = "Excel file import package",
+  "ldatuning"         = "LDA topic model tuning package",
+  "writexl"           = "Excel file export package",
+  "forecast"          = "Forecasting package",
+  "tseries"           = "Time series",
+  "segmented"         = "Structural Time Series",
+  "osfr"              = "Download data from OSF"
+)
+
+# Install packages
+for (package_name in names(packages)) {
+  message(paste0("Installing ", package_name, "..."))
+  if (!require(package_name, character.only = TRUE)) {
+    install.packages(package_name)
+  } else {
+    message(paste0(package_name, " is already installed."))
+  }
+  message(packages[[package_name]])
+  message("")
+}
+
+message("All packages installed.")
+
+```
+
+```{r, load-libraries, message = FALSE, include = TRUE}
+library(quanteda)
+library(seededlda)
+library(lubridate)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(ggplot2)
+library(wesanderson)
+library(ggthemes)
+library(tidyquant)
+library(quanteda.textplots)
+library(quanteda.textstats)
+library(rgexf)
+library(openxlsx)
+library(tidytext)
+library(readxl)
+library(ldatuning)
+library(writexl)
+library(modelsummary)
+library(forecast)
+library(tseries)
+library(modelsummary)
+library(flextable)
+library(segmented)
+library(osfr)
+```
+
+## Data Collection
+
+```{r, newswhip-pull, eval = FALSE, include = TRUE}
+num_articles <- 5000
+api_key <- 'XXXXXXX'
+api_endpoint <- paste0('https://api.newswhip.com/v1/articles?key=', api_key)
+get_newswhip_articles <- function(api_key, limit, start_time, end_time) {
+  api_endpoint <- paste0('https://api.newswhip.com/v1/articles?key=', api_key)          
+  data <- paste0('{\"filters\": [\"language:ru\"],
+                           \"size\": ', limit, ', 
+                           \"from\": ', start_time, ',
+                           \"to\": ', end_time, ',
+                           \"search_full_text\": true,
+                           \"find_related\": false}')
+  r <- httr::POST(api_endpoint, body = data)
+  httr::stop_for_status(r)         
+  jsonlite::fromJSON(httr::content(r, "text", encoding = "UTF-8"), flatten = TRUE)$articles          
+}
+
+days<-as.character(as.Date(as.Date("2021-09-01"):as.Date("2023-02-04"), origin="1970-01-01"))
+##Changed dates above for our time frame 2021-09-01 till 2023-02-04
+
+mylist <- list() 
+
+for (i in days) {
+  print("now running days:")
+  print (i)
+  start_time <- as.numeric(as.POSIXct(paste(i, "00:00:00 EST", sep=" "))) * 1000
+  end_time <- as.numeric(as.POSIXct(paste(as.Date(paste(i))+1,  "00:00:00 EST", sep=" "))) * 1000 - 1
+  data_temp <- get_newswhip_articles(api_key = api_key, limit = num_articles, start_time = start_time, end_time = end_time)
+  data_temp$date_time <- as.POSIXct(round(data_temp$publication_timestamp/1000), origin="1970-01-01")
+  data_temp$date <- as.Date(as.POSIXct(round(data_temp$publication_timestamp/1000), origin="1970-01-01"))
+  data_temp$relatedStories <- NULL
+  data_temp$topics <- NULL
+  data_temp$authors <- NULL
+  data_temp$entities <- NULL
+  data_temp$videos <- NULL
+  try(data_temp<- data_temp |>  dplyr::select(delta_time, 
+                                              recent_fb_counts, 
+                                              recent_tw_counts, 
+                                              predicted_interactions, 
+                                              predicted_timestamp, 
+                                              uuid, 
+                                              publication_timestamp, 
+                                              link, 
+                                              headline, 
+                                              excerpt, 
+                                              keywords, 
+                                              image_link, 
+                                              has_video, 
+                                              nw_score, 
+                                              max_nw_score, 
+                                              fb_data.total_engagement_count, 
+                                              fb_data.likes, 
+                                              fb_data.comments, 
+                                              fb_data.shares, 
+                                              fb_data.total_count_delta, 
+                                              fb_data.delta_period, 
+                                              fb_data.delta_period_unit, 
+                                              tw_data.tw_count, 
+                                              tw_data.total_count_delta, 
+                                              tw_data.delta_period, 
+                                              tw_data.delta_period_unit, 
+                                              li_data.li_count, 
+                                              li_data.total_count_delta, 
+                                              li_data.delta_period, 
+                                              li_data.delta_period_unit, 
+                                              pi_data.pi_count, 
+                                              pi_data.delta_period, 
+                                              pi_data.delta_period_unit, 
+                                              source.publisher, 
+                                              source.domain, 
+                                              source.link, 
+                                              source.country, 
+                                              source.country_code, 
+                                              source.language, 
+                                              date_time, 
+                                              date))
+  mylist[[i]] <- data_temp
+}
+
+data_temp1 <- do.call("rbind",mylist) |> data.frame()
+
+save(data_temp1, file="Output/RussianWarAllRus.Rda") ##changed the title of the file 
+
+dataRussiaMaster<- data_temp1 |> 
+  distinct(link,.keep_all = TRUE)|> 
+  distinct(uuid,.keep_all = TRUE) |> 
+  tibble::rowid_to_column("master_index") |> 
+  rowwise() |> 
+  mutate(engagement = sum(fb_data.total_engagement_count, 
+                          tw_data.tw_count,
+                          li_data.li_count,
+                          pi_data.pi_count)) 
+dataRussiaMaster$dateMONTH <- format(as.Date(dataRussiaMaster$date), "%Y-%m")
+
+min(dataRussiaMaster$date)
+max(dataRussiaMaster$date)
+
+dataRussiaMaster |>  count(dateMONTH)
+
+save(dataRussiaMaster, file="Output/Russia_Newswhip_MasterAllRus.Rda")
+
+```
+
+Prepare the data for scraping in Python
+
+```{r, prep-scrape, eval=FALSE, include = TRUE}
+myscrape <- dataRussiaMaster |> 
+  dplyr::select(master_index, uuid, link, date, dateMONTH)
+
+myscrape1 <-  myscrape |> 
+  filter(dateMONTH=='2021-09' | dateMONTH=='2021-10') ##Changed date to Sept2021, but for twitter our timeframe was 2021-09-04 till 2023-02-04, also I did 2 months, but shall we do one?
+min(myscrape1$date)
+max(myscrape1$date)
+write.csv(myscrape1, file="Output/Scrape_1.csv", row.names = FALSE)
+rm(myscrape1)
+
+myscrape2 <-  myscrape |> 
+  filter(dateMONTH=='2021-11' | dateMONTH=='2021-12')
+min(myscrape2$date)
+max(myscrape2$date)
+write.csv(myscrape2, file="Output/Scrape_2.csv", row.names = FALSE)
+rm(myscrape2)
+
+myscrape3 <-  myscrape |> 
+  filter(dateMONTH=='2022-01' | dateMONTH=='2022-02')
+min(myscrape3$date)
+max(myscrape3$date)
+write.csv(myscrape3, file="Output/Scrape_3.csv", row.names = FALSE)
+rm(myscrape3)
+
+myscrape4 <-  myscrape |> 
+  filter(dateMONTH=='2022-03' | dateMONTH=='2022-04')
+min(myscrape4$date)
+max(myscrape4$date)
+write.csv(myscrape4, file="Output/Scrape_4.csv", row.names = FALSE)
+rm(myscrape4)
+
+myscrape5 <-  myscrape |> 
+  filter(dateMONTH=='2022-05' | dateMONTH=='2022-06')
+min(myscrape5$date)
+max(myscrape5$date)
+write.csv(myscrape5, file="Output/Scrape_5.csv", row.names = FALSE)
+rm(myscrape5)
+
+ ## added more scrapes for more months
+myscrape6 <-  myscrape |> 
+  filter(dateMONTH=='2022-07' | dateMONTH=='2022-08')
+min(myscrape6$date)
+max(myscrape6$date)
+write.csv(myscrape6, file="Output/Scrape_6.csv", row.names = FALSE)
+rm(myscrape6)
+
+myscrape7 <-  myscrape |> 
+  filter(dateMONTH=='2022-09' | dateMONTH=='2022-10')
+min(myscrape7$date)
+max(myscrape7$date)
+write.csv(myscrape7, file="Output/Scrape_7.csv", row.names = FALSE)
+rm(myscrape7)
+
+myscrape8 <-  myscrape |> 
+  filter(dateMONTH=='2022-11' | dateMONTH=='2022-12')
+min(myscrape8$date)
+max(myscrape8$date)
+write.csv(myscrape8, file="Output/Scrape_8.csv", row.names = FALSE)
+rm(myscrape8)
+
+myscrape9 <-  myscrape |> 
+  filter(dateMONTH=='2023-01' | dateMONTH=='2023-02')
+min(myscrape9$date)
+max(myscrape9$date)
+write.csv(myscrape9, file="Output/Scrape_9.csv", row.names = FALSE)
+rm(myscrape9)
+
+```
+
+After scrape upload data and pre-process it
+
+```{r, upload-scrapedata, eval = FALSE, include = TRUE}
+path <- c("Input/Scraped/Russia")
+
+scraped <- list.files(path = path,  # Identify all CSV files
+                      pattern = "*.csv", full.names = TRUE) |> 
+  lapply(read_csv) |>                              
+  bind_rows 
+
+scraped |>  count(dateMONTH)
+
+
+## load master file to join
+load("Output/Russia_Newswhip_MasterAllRus.Rda")
+
+
+dataRussiaMaster |>  count(dateMONTH)
+
+temp <- left_join(dataRussiaMaster, scraped[, c("uuid", "link", "text")])
+rm(dataRussiaMaster)
+rm(scraped)
+gc()
+
+temp2 <- temp |> 
+  distinct(uuid,.keep_all = TRUE) |> 
+  distinct(text,.keep_all = TRUE) |> 
+  distinct(link,.keep_all = TRUE)
+
+temp2 |>  count(dateMONTH)
+save(temp2, file="Output/Russia_NewsWhip_MasterAllRussia_with_text.Rda")
+rm(temp)
+gc()
+
+```
+
+Filter with search words
+
+```{r, load-searchwords}
+search_words <- readxl::read_excel("Data/russian-search-words.xlsx")
+search_words_russia <- search_words[1:49,]
+search_words_russia <- search_words_russia$`Russia 50`
+print(search_words_russia)
+```
+
+```{r, filter-words, eval = FALSE, include = TRUE}
+df_filtered <- temp2 |> 
+  filter(grepl(paste(search_words_russia, collapse="|"), text))
+
+print(c("filter done", format(Sys.time(), "%a %b %d %X %Y")))
+
+df_filtered |>  count(dateMONTH)
+
+# Create new column with search words
+df_filtered$search_words <- sapply(str_extract_all(df_filtered$text, paste(search_words_russia, collapse="|")), paste, collapse=", ")
+
+print(c("search words done", format(Sys.time(), "%a %b %d %X %Y")))
+
+df_filtered$number_sw <- str_count(df_filtered$search_words, "\\w+")
+print(c("search words count done", format(Sys.time(), "%a %b %d %X %Y")))
+
+df_filtered$number_words <- str_count(df_filtered$text, "\\w+")
+print(c("text count done", format(Sys.time(), "%a %b %d %X %Y")))
+
+save(df_filtered, file="Output/Russia_NewsWhip_Filtered_with_text.Rda")
+
+beepr::beep()
+rm(temp2)
+rm(search_words)
+rm(search_words_russia)
+gc()
+```
+
+## SeededLDA
+
+SeededLDA from [Watanabe, 2019/2023](https://github.com/koheiw/seededlda)
+
+```{r, seededLDA, eval = FALSE, include = TRUE}
+df_filtered <- as.data.frame(df_filtered)
+RU_sample <- df_filtered |> 
+  dplyr::select(master_index, 
+                link,
+                uuid,
+                date,
+                dateMONTH, 
+                engagement,
+                text) 
+
+rm(df_filtered)
+
+### Start Cleaning
+#remove NAs
+RU_sample<-RU_sample[!is.na(RU_sample$text),] 
+
+#remove duplicates
+RU_sample <- RU_sample |> 
+  distinct(text, .keep_all = TRUE)
+
+RU_sample$nwords_text <- str_count(RU_sample$text, "\\w+")
+summary(RU_sample$nwords_text)
+hist(RU_sample$nwords_text, breaks = 10000)
+
+#remove extra short texts
+dim(RU_sample)
+
+quartiles <- quantile(RU_sample$nwords_text, probs=c(.25, .75), na.rm = FALSE)
+IQR <- IQR(RU_sample$nwords_text)
+
+Lower <- quartiles[1] - 1.5*IQR
+Upper <- quartiles[2] + 1.5*IQR 
+
+RU_sample2<- subset(RU_sample, RU_sample$nwords_text  > Lower & RU_sample$nwords_text  < Upper)
+
+dim(RU_sample2)
+summary(RU_sample2$nwords_text)
+
+table(RU_sample2$nwords_text)
+
+rm(RU_sample)
+rm(IQR)
+rm(Lower)
+rm(quartiles)
+rm(Upper)
+gc()
+
+#create an original text column
+RU_sample2$original_tweet <- RU_sample2$text
+
+stopwords <- read_csv("Input/stop_words_russian.txt", col_names = FALSE)
+stopwords_remove <- c(stopwords("ru", source = "marimo"), 
+                      tm::stopwords(kind = "ru"),
+                      stopwords$X1,
+                      "internet-group",
+                      "новости",
+                      "риа",
+                      "миа",
+                      "html",
+                      "645-6601",
+                      "meta",
+                      "head",
+                      "true",
+                      "фгуп",
+                      "og:title",
+                      "og:description",
+                      "ru-ru",
+                      "the",
+                      "ru")
+rm(stopwords)
+
+RU_sample2$text <- tolower(RU_sample2$text)
+RU_sample2$text <- gsub("@\\w+"," ",RU_sample2$text) #removes all after @ sign
+url_pattern <- "(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)"
+
+# Remove URLs from the text column
+RU_sample2$text <- str_replace_all(RU_sample2$text, url_pattern, "")
+
+## tokenize it
+toks <- tokens(RU_sample2$text,
+               remove_punct = TRUE,
+               remove_symbols = TRUE,
+               remove_numbers = TRUE,
+               remove_url = TRUE,
+               remove_separators = TRUE,
+               split_hyphens = FALSE,
+               include_docvars = TRUE,
+               padding = FALSE) |> 
+  tokens_remove(stopwords_remove) |> 
+  tokens_select(min_nchar = 2) 
+
+
+dfm_counts<- dfm(toks) 
+rm(toks) #remove unused files to save space
+
+docnames(dfm_counts)<-RU_sample2$master_index
+
+sparsity(dfm_counts)
+
+
+dfm_counts2<-dfm_trim(dfm_counts, 
+                      max_docfreq = nrow(RU_sample2)*0.5,
+                      min_docfreq= nrow(RU_sample2)*0.0002,
+                      docfreq_type="count")
+sparsity(dfm_counts2)
+dfm3 <- dfm_wordstem(dfm_counts2, language = "ru")
+
+
+#rm(dfm_counts) #remove for space
+
+#use word cloud to add more stopwords
+textstat_frequency(dfm3)
+quanteda.textplots::textplot_wordcloud(dfm3, 
+                                       min_size = 2, max_size = 5,
+                                       max_words = 5000)
+
+rm(dfm_counts2)
+rm(dfm_counts)
+gc()
+```
+
+Upload grouped search words to create the dictionary
+
+```{r, grouped-searchwords, eval=FALSE}
+## Search words
+Grouped_search_wordsRU <- read_excel("Data/Grouped_search_words.xlsx", 
+                                     sheet = "Russian")
+```
+
+
+```{r, runseededLDA, eval = FALSE}
+dictRU <- dictionary(list(Ukraine = na.omit(Grouped_search_wordsRU$Ukraine),
+                          Insurgents = na.omit(Grouped_search_wordsRU$Insurgents),
+                          Russia = na.omit(Grouped_search_wordsRU$Russia),
+                          USA = na.omit(Grouped_search_wordsRU$USA),
+                          Belarus = na.omit(Grouped_search_wordsRU$Belaus),
+                          Turkey = na.omit(Grouped_search_wordsRU$Turkey),
+                          Kazakhstan = na.omit(Grouped_search_wordsRU$Kazakhstan),
+                          Europe = na.omit(Grouped_search_wordsRU$Europe),
+                          Poland = na.omit(Grouped_search_wordsRU$Poland),
+                          China = na.omit(Grouped_search_wordsRU$China),
+                          NATO = na.omit(Grouped_search_wordsRU$NATO),
+                          UN = na.omit(Grouped_search_wordsRU$UN)))
+
+rm(Grouped_search_wordsRU)
+
+print(dictRU)
+
+start <- Sys.time()
+tmod_slda <- textmodel_seededlda(dfm3, 
+                                 dictionary = dictRU,
+                                 residual = TRUE)
+end <- Sys.time()
+print(end-start)
+
+
+# assign topics from seeded LDA as a document-level variable to the dfm
+RU_sample$topic2 <- topics(tmod_slda)
+
+# cross-table of the topic frequency
+table(RU_sample$topic2)
+
+save.image("Output/Russia_NW_SeededLDA_Test.Rdata")
+
+terms <- terms(tmod_slda, 20)
+
+# assign topics from seeded LDA as a document-level variable to the dfm
+RU_sample2$topic2 <- topics(tmod_slda)
+
+# cross-table of the topic frequency
+table(RU_sample2$topic2)
+
+terms <- as.data.frame(terms)
+
+openxlsx::write.xlsx(terms, 
+                     file="Output/Russia_Stemmed_SeededLDA_Top_Terms.xlsx",
+                     rowNames = FALSE)
+
+data_excel <- split(RU_sample2, RU_sample2$topic2)
+
+size <- length(data_excel)
+
+
+#creating number of lists equivalent
+# to the size of the generated groups 
+lapply(1:size, 
+       function(i) 
+         write.xlsx(data_excel[[i]],
+                    file = paste0("Output/",
+                                  names(data_excel[i]), ".xlsx")))
+
+### add more analysis
+
+dfm3$topic2 <- topics(tmod_slda)
+topic_frequency<-data.frame(table(dfm3$topic2))
+openxlsx::write.xlsx(topic_frequency,
+                     file="Output/Russia_Stem_SeededLDA_Topic_Freq.xlsx",
+                     rowNames = FALSE)
+
+###write top unique words#####
+topterms<-data.frame(terms(tmod_slda, 100))
+openxlsx::write.xlsx(topterms,
+                     "Output/Russia_Stemmed_SeededLDA_Top_Terms.xlsx",
+                     rowNames = FALSE)
+####the functions to get document topic probabilities and topic probabilities#####
+### get document topic probabilities
+get_doc_topic_probs <- function(tmod_slda) {
+  out <- tmod_slda$theta |>  
+    as_tibble(rownames = "doc_id")
+  return(out)
+}
+
+### get word topic probabilities
+get_word_topic_probs <- function(tmod_slda) {
+  out <- tmod_slda$phi |>  
+    as_tibble(rownames = "topic") |> 
+    pivot_longer(cols = !matches("topic"), 
+                 names_to = "token", 
+                 values_to = "prob")
+  return(out)
+}
+
+#####use them and save them#####
+topicprob<-get_doc_topic_probs(tmod_slda)
+
+topicprob$doc_id <- as.numeric(topicprob$doc_id)
+
+temp <- left_join(RU_sample2, topicprob, 
+                  by = c("master_index" = "doc_id"))
+
+url_pattern <- "(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)"
+
+# Remove URLs from the text column
+temp$text <- str_replace_all(temp$text, url_pattern, " ")
+
+save(temp, file = "Output/Russia_NewsWhip_Filtered_with_topics_prob.Rda")
+
+
+```
+
+### Sentiment Analysis
+
+```{r, sentiment-analysis, eval=FALSE}
+###first get the sentiment dictionary
+load("C:/Users/adl6244/Dropbox/ayse-and-olga-coding/Input/NRC_Russian.Rda")
+
+##create a stopword dataframe
+stopwords <- read_csv("Input/stop_words_russian.txt", col_names = FALSE)
+stopwords_remove <- c(stopwords("ru", source = "marimo"), 
+                      tm::stopwords(kind = "ru"),
+                      stopwords$X1,
+                      "internet-group",
+                      "новости",
+                      "риа",
+                      "миа",
+                      "html",
+                      "645-6601",
+                      "meta",
+                      "head",
+                      "true",
+                      "фгуп",
+                      "og:title",
+                      "og:description",
+                      "ru-ru",
+                      "the",
+                      "ru")
+rm(stopwords)
+stopwords<-data.frame(stopwords_remove)
+names(stopwords)[1]<-"word"
+
+#####antijoin by stopwords join by sentiment and counts
+temp_test<-temp |> 
+  unnest_tokens(word, text) |> 
+  anti_join(stopwords) |> 
+  inner_join(nrcRU) |> 
+  group_by(master_index) |> 
+  count(sentiment) |> 
+  spread(sentiment, n, fill=0) 
+temp_test<-full_join(temp, temp_test, by="master_index")
+##create a net sentiment column
+temp_test<-temp_test |>  mutate(sentiment=positive-negative)
+save(temp_test, file = "Output/Russia_NewsWhip_Filtered_with_topics_prob_sentiment.Rda")
+gc()
+beepr::beep()
+rm(temp)
+gc()
+
+
+#### Top 100 for each -----
+
+writeSentimentDataToExcel <- function(data, sentiment, prefix, sheetname_prefix, output_file) {
+  # Create a new Excel workbook
+  wb <- createWorkbook()
+  result_dfs <- list()
+  
+  # Get unique topics from the 'topic2' column
+  topics <- unique(data$topic2)
+  
+  # Loop through each topic
+  for (topic in topics) {
+    # Filter dataframe for the current topic and select top 100 texts based on the specified sentiment
+    filtered_data <- data |> 
+      select(master_index, topic2, link, uuid, date, engagement, text, anger:sentiment) |> 
+      filter(topic2 == topic) |> 
+      slice_max(!!sym(sentiment), n = 100)
+    
+    # Store the filtered dataframe in the list with a dynamically created name
+    result_dfs[[paste0(prefix, "_", topic)]] <- filtered_data
+    
+    # Create a new worksheet in the workbook
+    addWorksheet(wb, sheetName = paste0(sheetname_prefix, "_", topic))
+    
+    # Write the dataframe to the worksheet
+    writeData(wb, sheet = paste0(sheetname_prefix, "_", topic), x = filtered_data)
+  }
+  
+  # Save the Excel workbook
+  saveWorkbook(wb, output_file)
+}
+
+
+
+writeSentimentDataToExcel(temp_test, "anger", "anger", "anger", "Output/Anger_Texts_PerTopic.xlsx")
+writeSentimentDataToExcel(temp_test, "disgust", "disgust", "disgust", "Output/Disgust_Texts_PerTopic.xlsx")
+writeSentimentDataToExcel(temp_test, "fear", "fear", "fear", "Output/Fear_Texts_PerTopic.xlsx")
+writeSentimentDataToExcel(temp_test, "joy", "joy", "joy", "Output/Joy_Texts_PerTopic.xlsx")
+writeSentimentDataToExcel(temp_test, "sadness", "sadness", "sadness", "Output/Sadness_Texts_PerTopic.xlsx")
+writeSentimentDataToExcel(temp_test, "surprise", "surprise", "surprise", "Output/Surprise_Texts_Russia_PerTopic.xlsx")
+writeSentimentDataToExcel(temp_test, "trust", "trust", "trust", "Output/Trust_Texts_Russia_PerTopic.xlsx")
+writeSentimentDataToExcel(temp_test, "sentiment", "sentiment", "sentiment", "Output/Sentiment_Texts_Russia_PerTopic.xlsx")
+
+rm(filtered_data, wb, result_dfs)
+gc()
+
+# Function to multiply emotion values with respective columns
+
+multiplyEmotionValues <- function(data, emotion_columns) {
+  prefixes <- emotion_columns
+  
+  for (i in 1:length(emotion_columns)) {
+    emotions <- select(data, Ukraine:other)
+    colnames(emotions) <- paste(prefixes[i], colnames(emotions), sep = "_")
+    
+    for (j in 1:ncol(emotions)) {
+      emotions[, j] <- emotions[, j] * data[[emotion_columns[i]]]
+    }
+    
+    data <- cbind(data, emotions)
+  }
+  
+  return(data)
+}
+
+
+
+emotion_columns <- c("anger", "anticipation", 
+                     "disgust", "fear",
+                     "joy", "negative",
+                     "positive", "sadness",
+                     "surprise", "trust",
+                     "sentiment")  
+
+data <- multiplyEmotionValues(temp_test, emotion_columns)
+
+save(data, file = "Output/Russia_NewsWhip_Filtered_with_topics_prob_sentiment.Rda")
+
+## create daily data for regression
+## first create long dataframes for topics and different sentiments anger, 
+## fear, joy, sadness, trust
+topics <- data |> 
+  dplyr::select(master_index, 
+                        date,
+                        Ukraine:other) |> 
+  pivot_longer(
+    cols = Ukraine:other,
+    names_to = c("topics"),
+    values_to = "value"
+  )
+
+anger <- data |> 
+  dplyr::select(master_index, 
+                date,
+                anger_Ukraine:anger_other) |> 
+  pivot_longer(
+    cols = anger_Ukraine:anger_other,
+    names_to = c("topics"),
+    values_to = "value"
+  )
+
+fear <- data |> 
+  dplyr::select(master_index, 
+                date,
+                fear_Ukraine:fear_other) |> 
+  pivot_longer(
+    cols = fear_Ukraine:fear_other,
+    names_to = c("topics"),
+    values_to = "value"
+  )
+  
+joy <- data |> 
+  dplyr::select(master_index, 
+                date,
+                joy_Ukraine:joy_other) |> 
+  pivot_longer(
+    cols = joy_Ukraine:joy_other,
+    names_to = c("topics"),
+    values_to = "value"
+  )
+
+sadness <- data |> 
+  dplyr::select(master_index, 
+                date,
+                sadness_Ukraine:sadness_other) |> 
+  pivot_longer(
+    cols = sadness_Ukraine:sadness_other,
+    names_to = c("topics"),
+    values_to = "value"
+  )
+
+trust <- data |> 
+  dplyr::select(master_index, 
+                date,
+                trust_Ukraine:trust_other) |> 
+  pivot_longer(
+    cols = trust_Ukraine:trust_other,
+    names_to = c("topics"),
+    values_to = "value"
+  )
+
+rm(data)
+gc()
+
+save.image("Output/Smaller_Df.Rdata")
+
+write.csv(anger, file = "Output/Anger_Russia.csv",
+          row.names = FALSE)
+
+write.csv(fear, file = "Output/Fear_Russia.csv",
+          row.names = FALSE)
+
+write.csv(joy, file = "Output/Joy_Russia.csv",
+          row.names = FALSE)
+
+write.csv(sadness, file = "Output/Sadness_Russia.csv",
+          row.names = FALSE)
+
+write.csv(topics, file = "Output/Topics_Russia.csv",
+          row.names = FALSE)
+
+write.csv(trust, file = "Output/Trust_Russia.csv",
+          row.names = FALSE)
+
+### create a daily average of columns
+data_daily_RU <- data |> 
+  dplyr::select(-engagement) |> 
+  rename('engagement' = "tw_data.tw_count") |> 
+  group_by(date) |> 
+  summarise(across(everything(), mean, na.rm=TRUE))
+
+cor(data_daily_RU$fb_data.total_engagement_count, data_daily_RU$engagement, 
+    method = "pearson")
+
+save(data_daily_RU, file="Output/Data_for_regression_Russia.Rda")
+```
+
+## Statistical Analysis
+
+ADD making them wider
+
+```{r, makesmallerdfs}
+load("Data/Smaller_Df.Rdata")
+
+## download to R from your project directory
+
+# anger <- read_csv("Output/Aggregate_IV_DV_for_pub.csv",
+#     col_types = cols(date = col_date(format = "%Y-%m-%d")))
+
+
+anger <- anger |> 
+  mutate(topics = gsub("Insurgents", "Seccessionist", topics))
+
+fear <- fear |> 
+  mutate(topics = gsub("Insurgents", "Seccessionist", topics))
+
+joy <- joy |> 
+  mutate(topics = gsub("Insurgents", "Seccessionist", topics))
+
+sadness <- sadness |> 
+  mutate(topics = gsub("Insurgents", "Seccessionist", topics))
+
+topics <- topics |> 
+  mutate(topics = gsub("Insurgents", "Seccessionist", topics))
+
+trust <- trust |> 
+  mutate(topics = gsub("Insurgents", "Seccessionist", topics))
+
+```
+
+### ANOVA and Tukey-HSD Post Hoc
+
+#### Topic Probabilities
+
+```{r, topic-anovatukeyhsd}
+# Perform ANOVA
+anova_topics <- aov(value ~ topics, data = topics)
+anova_summary <- summary(anova_topics)
+
+# Check if p-value is less than 0.05
+if (anova_summary[[1]][["Pr(>F)"]][1] < 0.05) {
+  message("ANOVA p<0.05 means are different")
+  
+  # Perform Tukey's post-hoc analysis
+  tukey_topics <- TukeyHSD(anova_topics, conf.level=.95)
+  table_topics <- as.data.frame(tukey_topics$topics)
+  table_topics <- janitor::clean_names(table_topics)
+  table_topics <- table_topics |> 
+    mutate_if(is.numeric, round, 5)  |> 
+    tibble::rownames_to_column() |> 
+    rename('Topics' = 'rowname') |> 
+    mutate(status = case_when(
+      p_adj < 0.05 ~ 'significant',
+      #p_adj >= 0.05 ~ 'not_significant'
+      .default = "not_significant"
+    ))
+  
+  # Filter for significant differences
+  message("Significant Differences")
+  significant_differences <- subset(table_topics, p_adj < 0.05)
+  print(significant_differences$Topics)
+  
+  message("Not Significant Differences")
+  not_significant_differences <- subset(table_topics, p_adj > 0.05)
+  print(not_significant_differences$Topics)
+} else {
+  message("ANOVA p>=0.05 means are not significantly different")
+}
+```
+
+```{r, figure1, fig.width= 10, fig.height= 12, include=TRUE, echo=FALSE, fig.cap = "Figure 1. Topic Probabilities Tukey-HSD 95% Confidence Intervals"}
+
+xmin = min(table_topics$lwr - 0.005)
+xmax = max(table_topics$upr + 0.005)
+a <- ifelse(table_topics$status == "not_significant", "#9B110E", "black")
+ggplot(table_topics, aes(x=diff, y=Topics)) + 
+  geom_errorbar(aes(xmin=lwr, xmax=upr, group=status, color=status), width=1) +
+  geom_vline(xintercept = 0, linetype="dotdash", color = "navy") +
+  scale_color_manual(values = c("#9B110E", "black")) +
+  labs(x="Differences", 
+       y="Topics")+
+  theme_hc() +
+  scale_x_continuous(limits = c(xmin, xmax), 
+                     breaks = seq(xmin, xmax, by = 0.025)) +
+  theme(axis.text.x=element_text(hjust=1, size=10, angle = 45, family="sans"),
+        axis.text.y=element_text(family="sans", colour = a),
+        axis.title.x=element_text(vjust=-0.25, size=10, family="sans"),
+        axis.title.y=element_text(vjust=-0.50, size=10, family="sans"),
+        legend.position="bottom", 
+    legend.box="vertical", 
+    legend.title = element_blank(),
+    legend.margin=margin(),
+    legend.key = element_rect(fill=NA), 
+    legend.background = element_rect(fill=NA),
+    legend.box.background = element_blank())
+```
+
+```{r}
+rm(list=ls()[! ls() %in% c("anger","fear", "joy", "sadness", "topics", "trust")])
+
+```
+
+#### Anger Probabilities per Topic
+
+```{r, anger-anovatukeyhsd}
+# Perform ANOVA
+anova_anger <- aov(value ~ topics, data = anger)
+anova_summary <- summary(anova_anger)
+
+# Check if p-value is less than 0.05
+if (anova_summary[[1]][["Pr(>F)"]][1] < 0.05) {
+  message("ANOVA p<0.05 means are different")
+  
+  # Perform Tukey's post-hoc analysis
+  tukey_topics <- TukeyHSD(anova_anger)
+  table_topics <- as.data.frame(tukey_topics$topics)
+  table_topics <- janitor::clean_names(table_topics)
+  table_topics <- table_topics |> 
+    mutate_if(is.numeric, round, 4) |> 
+    tibble::rownames_to_column() |> 
+    rename('Topics' = 'rowname') |> 
+    mutate(status = case_when(
+      p_adj < 0.05 ~ 'significant',
+      #p_adj >= 0.05 ~ 'not_significant'
+      .default = "not_significant"
+    ))
+  
+  # Filter for significant differences
+  message("Significant Differences")
+  significant_differences <- subset(table_topics, p_adj < 0.05)
+  print(significant_differences$Topics)
+  
+  message("Not Significant Differences")
+  not_significant_differences <- subset(table_topics, p_adj > 0.05)
+  print(not_significant_differences$Topics)
+} else {
+  message("ANOVA p>=0.05 means are not significantly different")
+}
+```
+
+
+```{r, figure2, fig.width= 12, fig.height= 14, include=TRUE, echo=FALSE, fig.cap = "Figure 2. Anger Probabilities Tukey-HSD 95% Confidence Intervals"}
+
+xmin = min(table_topics$lwr - 0.005)
+xmax = max(table_topics$upr + 0.005)
+a <- ifelse(table_topics$status == "not_significant", "#9B110E", "black")
+ggplot(table_topics, aes(x=diff, y=Topics)) + 
+  geom_errorbar(aes(xmin=lwr, xmax=upr, group=status, color=status), width=1) +
+  geom_vline(xintercept = 0, linetype="dotdash", color = "navy") +
+  scale_color_manual(values = c("#9B110E", "black")) +
+  labs(x="Differences", 
+       y="Topics")+
+  theme_hc() +
+  scale_x_continuous(limits = c(xmin, xmax), 
+                     breaks = seq(xmin, xmax, by = 0.025)) +
+  theme(axis.text.x=element_text(hjust=1, size=10, angle = 45, family="sans"),
+        axis.text.y=element_text(family="sans", colour = a),
+        axis.title.x=element_text(vjust=-0.25, size=10, family="sans"),
+        axis.title.y=element_text(vjust=-0.50, size=10, family="sans"),
+        legend.position="bottom", 
+    legend.box="vertical", 
+    legend.title = element_blank(),
+    legend.margin=margin(),
+    legend.key = element_rect(fill=NA), 
+    legend.background = element_rect(fill=NA),
+    legend.box.background = element_blank())
+```
+
+```{r}
+rm(list=ls()[! ls() %in% c("anger","fear", "joy", "sadness", "topics", "trust")])
+```
+
+#### Fear Probabilities per Topic
+
+```{r, fear-anovatukeyhsd}
+# Perform ANOVA
+anova_fear <- aov(value ~ topics, data = fear)
+anova_summary <- summary(anova_fear)
+
+# Check if p-value is less than 0.05
+if (anova_summary[[1]][["Pr(>F)"]][1] < 0.05) {
+  message("ANOVA p<0.05 means are different")
+  
+  # Perform Tukey's post-hoc analysis
+  tukey_topics <- TukeyHSD(anova_fear)
+  table_topics <- as.data.frame(tukey_topics$topics)
+  table_topics <- janitor::clean_names(table_topics)
+  table_topics <- table_topics |> 
+    mutate_if(is.numeric, round, 4) |> 
+    tibble::rownames_to_column() |> 
+    rename('Topics' = 'rowname') |> 
+    mutate(status = case_when(
+      p_adj < 0.05 ~ 'significant',
+      #p_adj >= 0.05 ~ 'not_significant'
+      .default = "not_significant"
+    ))
+  
+  # Filter for significant differences
+  message("Significant Differences")
+  significant_differences <- subset(table_topics, p_adj < 0.05)
+  print(significant_differences$Topics)
+  
+  message("Not Significant Differences")
+  not_significant_differences <- subset(table_topics, p_adj > 0.05)
+  print(not_significant_differences$Topics)
+} else {
+  message("ANOVA p>=0.05 means are not significantly different")
+}
+```
+
+```{r, figure3, fig.width= 12, fig.height= 14, include=TRUE, echo=FALSE, fig.cap = "Figure 3. Fear Probabilities Tukey-HSD 95% Confidence Intervals"}
+
+xmin = min(table_topics$lwr - 0.005)
+xmax = max(table_topics$upr + 0.005)
+a <- ifelse(table_topics$status == "not_significant", "#9B110E", "black")
+ggplot(table_topics, aes(x=diff, y=Topics)) + 
+  geom_errorbar(aes(xmin=lwr, xmax=upr, group=status, color=status), width=1) +
+  geom_vline(xintercept = 0, linetype="dotdash", color = "navy") +
+  scale_color_manual(values = c("#9B110E", "black")) +
+  labs(x="Differences", 
+       y="Topics")+
+  theme_hc() +
+  scale_x_continuous(limits = c(xmin, xmax), 
+                     breaks = seq(xmin, xmax, by = 0.025)) +
+  theme(axis.text.x=element_text(hjust=1, size=10, angle = 45, family="sans"),
+        axis.text.y=element_text(family="sans", colour = a),
+        axis.title.x=element_text(vjust=-0.25, size=10, family="sans"),
+        axis.title.y=element_text(vjust=-0.50, size=10, family="sans"),
+        legend.position="bottom", 
+    legend.box="vertical", 
+    legend.title = element_blank(),
+    legend.margin=margin(),
+    legend.key = element_rect(fill=NA), 
+    legend.background = element_rect(fill=NA),
+    legend.box.background = element_blank())
+```
+
+```{r}
+rm(list=ls()[! ls() %in% c("anger","fear", "joy", "sadness", "topics", "trust")])
+```
+
+#### Joy Probabilities per Topic
+
+```{r, joy-anovatukeyhsd}
+# Perform ANOVA
+anova_joy <- aov(value ~ topics, data = joy)
+anova_summary <- summary(anova_joy)
+
+# Check if p-value is less than 0.05
+if (anova_summary[[1]][["Pr(>F)"]][1] < 0.05) {
+  message("ANOVA p<0.05 means are different")
+  
+  # Perform Tukey's post-hoc analysis
+  tukey_topics <- TukeyHSD(anova_joy)
+  table_topics <- as.data.frame(tukey_topics$topics)
+  table_topics <- janitor::clean_names(table_topics)
+  table_topics <- table_topics |> 
+    mutate_if(is.numeric, round, 4) |> 
+    tibble::rownames_to_column() |> 
+    rename('Topics' = 'rowname') |> 
+    mutate(status = case_when(
+      p_adj < 0.05 ~ 'significant',
+      #p_adj >= 0.05 ~ 'not_significant'
+      .default = "not_significant"
+    ))
+  
+  # Filter for significant differences
+  message("Significant Differences")
+  significant_differences <- subset(table_topics, p_adj < 0.05)
+  print(significant_differences$Topics)
+  
+  message("Not Significant Differences")
+  not_significant_differences <- subset(table_topics, p_adj > 0.05)
+  print(not_significant_differences$Topics)
+} else {
+  message("ANOVA p>=0.05 means are not significantly different")
+}
+```
+
+```{r, figure4, fig.width= 12, fig.height= 14, include=TRUE, echo=FALSE, fig.cap = "Figure 4. Joy Probabilities Tukey-HSD 95% Confidence Intervals"}
+
+xmin = min(table_topics$lwr - 0.005)
+xmax = max(table_topics$upr + 0.005)
+a <- ifelse(table_topics$status == "not_significant", "#9B110E", "black")
+ggplot(table_topics, aes(x=diff, y=Topics)) + 
+  geom_errorbar(aes(xmin=lwr, xmax=upr, group=status, color=status), width=1) +
+  geom_vline(xintercept = 0, linetype="dotdash", color = "navy") +
+  scale_color_manual(values = c("#9B110E", "black")) +
+  labs(x="Differences", 
+       y="Topics")+
+  theme_hc() +
+  scale_x_continuous(limits = c(xmin, xmax), 
+                     breaks = seq(xmin, xmax, by = 0.025)) +
+  theme(axis.text.x=element_text(hjust=1, size=10, angle = 45, family="sans"),
+        axis.text.y=element_text(family="sans", colour = a),
+        axis.title.x=element_text(vjust=-0.25, size=10, family="sans"),
+        axis.title.y=element_text(vjust=-0.50, size=10, family="sans"),
+        legend.position="bottom", 
+    legend.box="vertical", 
+    legend.title = element_blank(),
+    legend.margin=margin(),
+    legend.key = element_rect(fill=NA), 
+    legend.background = element_rect(fill=NA),
+    legend.box.background = element_blank())
+```
+
+```{r}
+rm(list=ls()[! ls() %in% c("anger","fear", "joy", "sadness", "topics", "trust")])
+```
+
+#### Sadness Probabilities per Topic
+
+```{r, sadness-anovatukeyhsd}
+# Perform ANOVA
+anova_sadness <- aov(value ~ topics, data = sadness)
+anova_summary <- summary(anova_sadness)
+
+# Check if p-value is less than 0.05
+if (anova_summary[[1]][["Pr(>F)"]][1] < 0.05) {
+  message("ANOVA p<0.05 means are different")
+  
+  # Perform Tukey's post-hoc analysis
+  tukey_topics <- TukeyHSD(anova_sadness)
+  table_topics <- as.data.frame(tukey_topics$topics)
+  table_topics <- janitor::clean_names(table_topics)
+  table_topics <- table_topics |> 
+    mutate_if(is.numeric, round, 4) |> 
+    tibble::rownames_to_column() |> 
+    rename('Topics' = 'rowname') |> 
+    mutate(status = case_when(
+      p_adj < 0.05 ~ 'significant',
+      #p_adj >= 0.05 ~ 'not_significant'
+      .default = "not_significant"
+    ))
+  
+  # Filter for significant differences
+  message("Significant Differences")
+  significant_differences <- subset(table_topics, p_adj < 0.05)
+  print(significant_differences$Topics)
+  
+  message("Not Significant Differences")
+  not_significant_differences <- subset(table_topics, p_adj > 0.05)
+  print(not_significant_differences$Topics)
+} else {
+  message("ANOVA p>=0.05 means are not significantly different")
+}
+```
+
+```{r, figure5, fig.width= 12, fig.height= 14, include=TRUE, echo=FALSE, fig.cap = "Figure 5. Sadness Probabilities Tukey-HSD 95% Confidence Intervals"}
+
+xmin = min(table_topics$lwr - 0.005)
+xmax = max(table_topics$upr + 0.005)
+a <- ifelse(table_topics$status == "not_significant", "#9B110E", "black")
+ggplot(table_topics, aes(x=diff, y=Topics)) + 
+  geom_errorbar(aes(xmin=lwr, xmax=upr, group=status, color=status), width=1) +
+  geom_vline(xintercept = 0, linetype="dotdash", color = "navy") +
+  scale_color_manual(values = c("#9B110E", "black")) +
+  labs(x="Differences", 
+       y="Topics")+
+  theme_hc() +
+  scale_x_continuous(limits = c(xmin, xmax), 
+                     breaks = seq(xmin, xmax, by = 0.025)) +
+  theme(axis.text.x=element_text(hjust=1, size=10, angle = 45, family="sans"),
+        axis.text.y=element_text(family="sans", colour = a),
+        axis.title.x=element_text(vjust=-0.25, size=10, family="sans"),
+        axis.title.y=element_text(vjust=-0.50, size=10, family="sans"),
+        legend.position="bottom", 
+    legend.box="vertical", 
+    legend.title = element_blank(),
+    legend.margin=margin(),
+    legend.key = element_rect(fill=NA), 
+    legend.background = element_rect(fill=NA),
+    legend.box.background = element_blank())
+```
+
+```{r}
+rm(list=ls()[! ls() %in% c("anger","fear", "joy", "sadness", "topics", "trust")])
+```
+
+#### Trust Probabilities per Topic
+
+```{r, trust-anovatukeyhsd}
+# Perform ANOVA
+anova_trust <- aov(value ~ topics, data = trust)
+anova_summary <- summary(anova_trust)
+
+# Check if p-value is less than 0.05
+if (anova_summary[[1]][["Pr(>F)"]][1] < 0.05) {
+  message("ANOVA p<0.05 means are different")
+  
+  # Perform Tukey's post-hoc analysis
+  tukey_topics <- TukeyHSD(anova_trust)
+  table_topics <- as.data.frame(tukey_topics$topics)
+  table_topics <- janitor::clean_names(table_topics)
+  table_topics <- table_topics |> 
+    mutate_if(is.numeric, round, 4) |> 
+    tibble::rownames_to_column() |> 
+    rename('Topics' = 'rowname') |> 
+    mutate(status = case_when(
+      p_adj < 0.05 ~ 'significant',
+      #p_adj >= 0.05 ~ 'not_significant'
+      .default = "not_significant"
+    ))
+  
+  # Filter for significant differences
+  message("Significant Differences")
+  significant_differences <- subset(table_topics, p_adj < 0.05)
+  print(significant_differences$Topics)
+  
+  message("Not Significant Differences")
+  not_significant_differences <- subset(table_topics, p_adj > 0.05)
+  print(not_significant_differences$Topics)
+} else {
+  message("ANOVA p>=0.05 means are not significantly different")
+}
+```
+
+```{r, figure6, fig.width= 12, fig.height= 14, include=TRUE, echo=FALSE, fig.cap = "Figure 6. Sadness Probabilities Tukey-HSD 95% Confidence Intervals"}
+
+xmin = min(table_topics$lwr - 0.005)
+xmax = max(table_topics$upr + 0.005)
+a <- ifelse(table_topics$status == "not_significant", "#9B110E", "black")
+ggplot(table_topics, aes(x=diff, y=Topics)) + 
+  geom_errorbar(aes(xmin=lwr, xmax=upr, group=status, color=status), width=1) +
+  geom_vline(xintercept = 0, linetype="dotdash", color = "navy") +
+  scale_color_manual(values = c("#9B110E", "black")) +
+  labs(x="Differences", 
+       y="Topics")+
+  theme_hc() +
+  scale_x_continuous(limits = c(xmin, xmax), 
+                     breaks = seq(xmin, xmax, by = 0.025)) +
+  theme(axis.text.x=element_text(hjust=1, size=10, angle = 45, family="sans"),
+        axis.text.y=element_text(family="sans", colour = a),
+        axis.title.x=element_text(vjust=-0.25, size=10, family="sans"),
+        axis.title.y=element_text(vjust=-0.50, size=10, family="sans"),
+        legend.position="bottom", 
+    legend.box="vertical", 
+    legend.title = element_blank(),
+    legend.margin=margin(),
+    legend.key = element_rect(fill=NA), 
+    legend.background = element_rect(fill=NA),
+    legend.box.background = element_blank())
+```
+
+```{r}
+rm(list=ls())
+```
+
+
+### Segmented Regression
+
+```{r}
+load("Data/Data_for_regression_Russia.Rda")
+# Find the indices of columns containing the word "other"
+cols_to_drop <- grep("other", colnames(data_daily_RU))
+
+# Drop the columns from the data frame
+data_daily_RU <- data_daily_RU[, -cols_to_drop]
+rm(cols_to_drop)
+
+colnames(data_daily_RU) <- gsub("Insurgents", "Seccessionist", colnames(data_daily_RU))
+
+data_daily_RU <- data_daily_RU |> 
+  rename('tw_eng' = "engagement",
+         'fb_eng' = 'fb_data.total_engagement_count') |> 
+  mutate(Anger_Russia_Ukraine_Dif = anger_Russia - anger_Ukraine)
+
+```
+
+
+```{r, ttest-int, echo=FALSE, message=FALSE}
+data_daily_RU <- data_daily_RU |> 
+  mutate(
+    Interruption = case_when(
+      date > '2022-02-24' ~ 1,
+      .default = 0))
+```
+
+```{r, ttest, echo=FALSE, message=FALSE}
+# Select columns date, fb, tw engagement & interruption
+a <- which(colnames(data_daily_RU) == "date") 
+b <- which(colnames(data_daily_RU) == "fb_eng") 
+c <- which(colnames(data_daily_RU) == "tw_eng") 
+d <- which(colnames(data_daily_RU) == "Interruption") 
+
+selected_cols <- c(a, b, c, d)
+
+# Extract the desired columns from the data frame
+dependent_variables <- names(data_daily_RU)[-selected_cols]
+rm(selected_cols)
+
+```
+
+
+```{r, segmented, echo=FALSE}
+
+# Loop over each dependent variable
+
+# Multiply columns "Ukraine" to "UN" with "tw_eng" and create new columns
+for (dep_var in c("Ukraine", "Seccessionist", "Russia", "USA", "Belarus", "Turkey",
+                  "Kazakhstan", "Europe", "Poland", "China", "NATO", "UN")) {
+  tw_eng_col <- paste(dep_var, "_tw_eng", sep = "")
+  fb_eng_col <- paste(dep_var, "_fb_eng", sep = "")
+  
+  data_daily_RU[[tw_eng_col]] <- data_daily_RU[[dep_var]] * data_daily_RU$tw_eng
+  data_daily_RU[[fb_eng_col]] <- data_daily_RU[[dep_var]] * data_daily_RU$fb_eng
+}
+
+# Select columns date, fb, tw engagement & interruption
+a <- which(colnames(data_daily_RU) == "date") 
+d <- which(colnames(data_daily_RU) == "Interruption") 
+
+selected_cols <- c(a, d)
+
+# Extract the desired columns from the data frame
+dependent_variables <- names(data_daily_RU)[-selected_cols]
+rm(selected_cols)
+# Initialize lists to store results
+significant_vars <- c()
+non_significant_vars <- c()
+significant_models <- list()
+significant_models2 <- list()
+
+
+
+for (dep_var in dependent_variables) {
+  # Create the formula for the segmented model
+  formula_str <- paste(dep_var, "~ date")
+  seg_formula <- as.formula(formula_str)
+  
+  # Fit the segmented regression model
+  seg_model <- segmented(lm(seg_formula, data = data_daily_RU),
+                         seg.Z = ~ date,
+                         psi = as.Date("2022-02-24"))
+  
+  # Extract the p-value for the change in slope
+  summary_model <- summary(seg_model)
+  p_value_beta2 <- summary_model$coefficients["date", "Pr(>|t|)"]
+  slope <- slope(seg_model)
+  
+
+  if (!is.na(p_value_beta2) && p_value_beta2 < 0.05) {
+    # Save the significant segmented model in the environment
+    assign(paste0("seg_model_", dep_var), seg_model)
+    
+    # Determine the direction of the change in slope
+    beta2 <- coef(summary_model)["date", "Estimate"]
+    slope2 <- slope$date["slope2", "Est."]
+    direction <- ifelse(slope2 > 0, "positive", "negative")
+    
+    # Add the variable and its direction to the list of significant variables
+    significant_vars <- c(significant_vars, paste(dep_var, "(", direction, ")", sep = ""))
+    significant_models[[dep_var]] <- list(seg_model, direction)
+    significant_models2[[dep_var]] <- seg_model
+    
+  } else {
+    # Add the variable to the list of non-significant variables
+    non_significant_vars <- c(non_significant_vars, dep_var)
+  }
+}
+
+
+# Print the dependent variables with significant results
+cat("Dependent variables with significant change in slope:\n")
+for (sig_var in significant_vars) {
+  cat(sig_var, "\n")
+}
+cat("\n")
+
+# Print the dependent variables that are not significant
+cat("Dependent variables that are not significant change in slope:\n")
+for (non_sig_var in non_significant_vars) {
+  cat(non_sig_var, "\n")
+}
+
+```
+
+
+```{r}
+# Create a data frame to store the table data
+table_data <- data.frame(
+  Model = character(),
+  Significance = character(),
+  Direction = character(),
+  `P Value` = character(),
+  stringsAsFactors = FALSE
+)
+
+# Populate the data frame with significant models data
+for (dep_var_direction in significant_vars) {
+  model_name <- sub("\\(.*", "", dep_var_direction)  # Extract everything before the parenthesis
+  direction <- str_extract(dep_var_direction, "\\((.*?)\\)")
+  direction <- substr(direction, 2, nchar(direction) - 1)  # Remove the leading and trailing parentheses
+
+  model_info <- significant_models[[model_name]]
+  p_value <- summary(model_info[[1]])$coefficients["date", "Pr(>|t|)"]
+  significance <- ifelse(p_value < 0.001, "p < 0.001", ifelse(p_value < 0.01, "p < 0.01", "p < 0.05"))
+  p_value <-  round(p_value, 4)
+  table_data <- rbind(table_data, data.frame(Model = model_name, `P Value` = p_value, Significance = significance, Direction = direction))
+}
+
+table_data <- table_data |> 
+  arrange(Model)
+table <- flextable(table_data)
+table <- theme_vanilla(table)
+table_caption = c("Table 1", "Segmented Regression Results")
+table <- table |>
+  add_header_lines(values = table_caption) |>
+  bold(part = "header", i = 1) |>
+  italic(part = "header", i = c(2:length(table_caption))) |>
+  align(part = "header", i = c(1:length(table_caption)), align = "left") |>
+  border(part = "head", i = c(1:length(table_caption)),
+         border = list("width" = 0, color = "black", style = "solid")) |>
+  set_table_properties(align = "left", layout = "autofit") |>
+  line_spacing(space = 0.8, part = "all") |>
+  paginate(init = FALSE, hdr_ftr = TRUE)
+table
+```
+
+
+```{r, fig, fig.width= 8, fig.height= 6}
+# Function to plot a segmented model
+# Loop over each significant segmented model and create ggplot plots
+# selected_models <- significant_models[grepl(paste(c("Russia", "Ukraine", "Insurgents", "China", "USA", "fb_eng", "tw_eng"), collapse = "|"), names(significant_models))]
+
+selected_models <- significant_models2[
+  grepl(paste(c("Russia", "Ukraine"), collapse = "|"), names(significant_models2)) |
+  names(significant_models2) %in% c("fb_eng", "tw_eng")
+]
+
+
+for (dep_var in names(selected_models)) {
+  # Extract segmented model data
+  model_data <- data.frame(date = data_daily_RU$date,
+                           y = data_daily_RU[[dep_var]],
+                           fitted = fitted(significant_models2[[dep_var]]),
+                           segment = predict(significant_models2[[dep_var]]))
+
+  # Create ggplot plot
+  plot <- ggplot(model_data, aes(x = date)) +
+    geom_line(aes(y = y), color = "blue") +
+    geom_line(aes(y = fitted), color = "purple", linetype = "dashed", linewidth = 2) +
+    geom_line(aes(y = segment), color = "darkgray", linetype = "dashed", linewidth = 2) +
+    geom_vline(xintercept = as.Date("2022-02-24"),
+             col = "red", lwd = 2, linetype = "dotted") +
+    labs(title = paste("Predicted Segmented Model Russia Media Source for", dep_var),
+         x = "Date", y = "Value") +
+    scale_x_date(date_breaks = "1 month", date_labels = "%d %b %y", date_minor_breaks = "15 days") +
+    theme_hc() +
+    theme(text=element_text(size=12,family="sans"),
+        title=element_text(size=12,family="sans"),
+        axis.text.x=element_text(size=12, angle = 60, hjust=1, family = "sans"),
+        axis.text.y=element_text(family="sans"),
+        axis.title.x=element_text(vjust=-0.25, size=12, family="sans"),
+        axis.title.y=element_text(vjust=-0.25, size=12, family="sans"),
+        legend.position="none", legend.box="vertical", legend.margin=margin(),
+        legend.key = element_rect(fill="white"), legend.background = element_rect(fill=NA),
+        legend.text=element_text(size=12, family="sans")) 
+  print(plot)
+  filename <- paste0("Russia_Images/", dep_var, ".jpeg")
+  ggsave(filename, plot, bg = "white",
+         width = 12, height = 10, dpi = 300)
+}
+
+```
+
+
