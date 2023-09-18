@@ -10,7 +10,7 @@
 This research was presented in [World Association for Public Opinion Research (WAPOR) 76th Annual Conference](https://wapor.org/wp-content/uploads/Program-draft-12-09-2023.pdf)
 
 This file contains the following scripts:
-- ![Static Badge](https://img.shields.io/badge/R-v4.3.1-blue)[Russia data collections, textual analysis and social-distancing calculation](https://github.com/aysedeniz09/comp_social_distancing/blob/main/R/github_Russia.Rmd)
+- [![Static Badge](https://img.shields.io/badge/R-v4.3.1-blue)](https://github.com/aysedeniz09/comp_social_distancing/blob/main/R/github_Russia.Rmd)Russia data collections, textual analysis and social-distancing calculation
 - ![Static Badge](https://img.shields.io/badge/python-v3.7-blue)
 Russia web-scraping
 - ![Static Badge](https://img.shields.io/badge/R-v4.3.1-blue)Ukraine data collections, textual analysis and social-distancing calculation
