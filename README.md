@@ -16,4 +16,4 @@ This file contains the following scripts:
 
 - [![Static Badge](https://img.shields.io/badge/R-v4.3.1-blue)Ukraine data collections, textual analysis and social-distancing calculation](https://github.com/aysedeniz09/comp_social_distancing/blob/main/github_Ukraine.md)
 
--   [![Static Badge](https://img.shields.io/badge/python-v3.7-blue)(https://github.com/aysedeniz09/comp_social_distancing/blob/main/Python/nw-scrape-code.md) Article scraping in Russian and Ukranian](https://github.com/aysedeniz09/comp_social_distancing/blob/main/Python/nw-scrape-code.md)
+-   [![Static Badge](https://img.shields.io/badge/python-v3.7-blue)Article scraping in Russian and Ukranian](https://github.com/aysedeniz09/comp_social_distancing/blob/main/Python/nw-scrape-code.md)
