@@ -107,7 +107,7 @@ api_key <- 'XXXXXXX'
 api_endpoint <- paste0('https://api.newswhip.com/v1/articles?key=', api_key)
 get_newswhip_articles <- function(api_key, limit, start_time, end_time) {
   api_endpoint <- paste0('https://api.newswhip.com/v1/articles?key=', api_key)          
-  data <- paste0('{\"filters\": [\"language:ru\"],
+  data <- paste0('{\"filters\": [\"language:ru AND country_code:ru\"],
                            \"size\": ', limit, ', 
                            \"from\": ', start_time, ',
                            \"to\": ', end_time, ',
@@ -820,8 +820,6 @@ save(data_daily_RU, file="Output/Data_for_regression_Russia.Rda")
 ```
 
 ## Statistical Analysis
-
-ADD making them wider
 
 ```{r, makesmallerdfs}
 load("Data/Smaller_Df.Rdata")
